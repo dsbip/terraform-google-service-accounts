@@ -1,0 +1,35 @@
+# Every kind of principal the module accepts in iam_bindings.members, side by side.
+project_id: acme-iam-demo
+
+service_accounts:
+  - account_id: shared-tooling
+    display_name: Shared tooling
+    description: Shows every accepted principal format
+    iam_bindings:
+      # Who may attach this account to resources (VMs, Cloud Run, Dataflow, ...).
+      - role: roles/iam.serviceAccountUser
+        members:
+          - user:alice@acme.example.com                               # a Google account
+          - group:platform-team@acme.example.com                      # a Google group
+          - serviceAccount:ci-runner@acme-ci.iam.gserviceaccount.com  # a service account in another project
+          - ref:tooling-bot                                           # a service account defined in this file
+
+      # Who may mint short-lived tokens for (impersonate) this account.
+      - role: roles/iam.serviceAccountTokenCreator
+        members:
+          - domain:acme.example.com                                   # everyone in a Workspace / Cloud Identity domain
+          # A group from a Workforce Identity Federation pool (employees signing in via an external IdP).
+          - principalSet://iam.googleapis.com/locations/global/workforcePools/acme-okta/group/gcp-tooling
+
+      # External and Kubernetes workloads that may act as this account.
+      - role: roles/iam.workloadIdentityUser
+        members:
+          # One identity from a Workload Identity Federation pool.
+          - principal://iam.googleapis.com/projects/123456789012/locations/global/workloadIdentityPools/partners/subject/partner-etl
+          # Every identity in that pool carrying attribute.team=data.
+          - principalSet://iam.googleapis.com/projects/123456789012/locations/global/workloadIdentityPools/partners/attribute.team/data
+          # A Kubernetes service account (namespace "tools", name "tooling") via GKE Workload Identity.
+          - serviceAccount:acme-iam-demo.svc.id.goog[tools/tooling]
+
+  - account_id: tooling-bot
+    display_name: Tooling bot

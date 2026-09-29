@@ -1,0 +1,49 @@
+# Data platform: orchestration, processing and BI identities, with cross-project
+# access to the data lake and folder-wide read access for data discovery.
+project_id: acme-data-platform
+
+service_accounts:
+  - account_id: composer-env
+    display_name: Cloud Composer environment
+    description: Runs Airflow DAGs and launches Dataflow jobs that run as dataflow-worker
+    project_roles:
+      - roles/composer.worker
+      - roles/dataflow.developer
+
+  - account_id: dataflow-worker
+    display_name: Dataflow worker
+    iam_bindings:
+      # Composer launches Dataflow jobs that run as this account.
+      - role: roles/iam.serviceAccountUser
+        members:
+          - ref:composer-env
+    project_roles:
+      - roles/dataflow.worker
+      # Several roles on the same target in one entry.
+      - roles:
+          - roles/storage.objectAdmin
+          - roles/bigquery.dataEditor
+          - roles/bigquery.jobUser
+        project_id: acme-data-lake
+
+  # Read-only identity for a BI tool (e.g. Looker) connecting to BigQuery.
+  - account_id: bi-reader
+    display_name: BI tool (read-only)
+    iam_bindings:
+      - role: roles/iam.serviceAccountTokenCreator
+        members:
+          - group:bi-admins@acme.example.com
+    project_roles:
+      - roles/bigquery.jobUser
+      - role: roles/bigquery.dataViewer
+        project_id: acme-data-lake
+        condition:
+          title: curated-datasets-only
+          description: Only datasets whose name starts with curated_
+          expression: resource.name.startsWith("projects/acme-data-lake/datasets/curated_")
+    folder_roles:
+      # Browse every project under the data folder, e.g. for a data catalog.
+      - roles:
+          - roles/browser
+          - roles/bigquery.metadataViewer
+        folder_id: "345678901234"

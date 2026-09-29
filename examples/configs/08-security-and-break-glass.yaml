@@ -1,0 +1,47 @@
+# Organization-wide security tooling and an emergency (break-glass) account.
+project_id: acme-security
+
+service_accounts:
+  # Read-only scanner for a CSPM / asset inventory tool across the whole organization.
+  - account_id: security-scanner
+    display_name: Security scanner (read-only)
+    iam_bindings:
+      - role: roles/iam.serviceAccountTokenCreator
+        members:
+          - group:security-engineering@acme.example.com
+    organization_roles:
+      - roles:
+          - roles/iam.securityReviewer
+          - roles/cloudasset.viewer
+          - roles/securitycenter.findingsViewer
+        org_id: "987654321098"
+
+  # Manages log sinks for the organization and reads logs in the prod folder.
+  - account_id: log-router-admin
+    display_name: Log router admin
+    organization_roles:
+      - role: roles/logging.configWriter
+        org_id: organizations/987654321098 # the "organizations/" prefix is optional
+    folder_roles:
+      - role: roles/logging.viewer
+        folder_id: folders/456789012345 # the "folders/" prefix is optional
+
+  # Emergency access. Kept disabled; set disabled: false only during an incident.
+  - account_id: break-glass-admin
+    display_name: Break-glass admin
+    description: Emergency organization admin. Disabled by default; every use is audited.
+    disabled: true
+    deletion_policy: PREVENT
+    iam_bindings:
+      # Authoritative and time-boxed: exactly this group, and only until the date below.
+      - role: roles/iam.serviceAccountTokenCreator
+        authoritative: true
+        members:
+          - group:security-oncall@acme.example.com
+        condition:
+          title: until-end-of-2026
+          description: Re-approve this access every year
+          expression: request.time < timestamp("2027-01-01T00:00:00Z")
+    organization_roles:
+      - role: roles/resourcemanager.organizationAdmin
+        org_id: "987654321098"

@@ -1,0 +1,97 @@
+# Exercises every feature of the module. Assertions live in tests/*.tftest.hcl.
+project_id: file-default-proj
+
+service_accounts:
+  # Minimal: everything defaulted (project comes from the top-level project_id).
+  - account_id: minimal-sa
+
+  # CI deployer: federated from GitHub Actions, deploys the app, can act as app-runtime.
+  - account_id: ci-deployer
+    display_name: CI deployer
+    description: Deploys the app from GitHub Actions
+    iam_bindings:
+      - role: roles/iam.workloadIdentityUser
+        members:
+          - principalSet://iam.googleapis.com/projects/123456789/locations/global/workloadIdentityPools/github/attribute.repository/acme/app
+          - principal://iam.googleapis.com/projects/123456789/locations/global/workloadIdentityPools/github/subject/repo:acme/app:ref:refs/heads/main
+      - role: roles/iam.serviceAccountTokenCreator
+        members:
+          - user:alice@example.com
+          - group:platform-admins@example.com
+          - domain:example.com
+          - serviceAccount:external-bot@other-proj.iam.gserviceaccount.com
+          - ref:app-runtime
+    project_roles:
+      - roles/run.admin                       # shorthand, SA's own project
+      - role: roles/artifactregistry.writer
+        project_id: shared-artifacts
+      - roles:
+          - roles/logging.logWriter
+          - roles/monitoring.metricWriter
+
+  # Runtime SA in an explicit project, with authoritative + conditional bindings.
+  - account_id: app-runtime
+    project_id: app-prod-proj
+    display_name: App runtime
+    disabled: false
+    create_ignore_already_exists: true
+    deletion_policy: PREVENT
+    iam_bindings:
+      - role: roles/iam.serviceAccountUser
+        authoritative: true
+        members:
+          - ref:ci-deployer
+          - group:sre@example.com
+          - group:sre@example.com            # duplicate member collapses
+      - role: roles/iam.workloadIdentityUser
+        members:
+          - serviceAccount:app-prod-proj.svc.id.goog[default/app]
+      - role: roles/iam.serviceAccountTokenCreator
+        members:
+          - user:oncall@example.com
+        condition:
+          title: business-hours
+          description: Only during working hours
+          expression: request.time.getHours("Europe/Berlin") >= 9 && request.time.getHours("Europe/Berlin") <= 17
+    project_roles:
+      - role: roles/secretmanager.secretAccessor
+        condition:
+          title: app-secrets-only
+          expression: resource.name.startsWith("projects/app-prod-proj/secrets/app-")
+      - role: roles/secretmanager.secretAccessor   # same role, different condition title
+        condition:
+          title: shared-secrets
+          expression: resource.name.startsWith("projects/app-prod-proj/secrets/shared-")
+    folder_roles:
+      - role: roles/resourcemanager.folderViewer
+        folder_id: "111111111111"
+      - roles: [roles/browser, roles/logging.viewer]
+        folder_id: folders/222222222222
+    organization_roles:
+      - role: roles/iam.securityReviewer
+        org_id: "333333333333"
+      - role: roles/orgpolicy.policyViewer
+        org_id: organizations/333333333333
+      - role: organizations/333333333333/roles/customAuditor
+        org_id: 333333333333                   # unquoted number still works
+
+  # Break-glass: disabled, custom project role, time-bound grant, duplicate entries collapse.
+  - account_id: break-glass
+    project_id: legacy-proj
+    disabled: true
+    iam_bindings:
+      - role: projects/app-prod-proj/roles/customImpersonator
+        members:
+          - group:security@example.com
+        condition:
+          title: expires-2027
+          expression: request.time < timestamp("2027-01-01T00:00:00Z")
+      - role: projects/app-prod-proj/roles/customImpersonator
+        members:
+          - group:security@example.com
+        condition:
+          title: expires-2027
+          expression: request.time < timestamp("2027-01-01T00:00:00Z")
+    project_roles:
+      - roles/viewer
+      - roles/viewer

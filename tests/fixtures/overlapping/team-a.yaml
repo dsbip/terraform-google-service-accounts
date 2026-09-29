@@ -1,0 +1,6 @@
+# Used by tests/examples.tftest.hcl: defines the same account as team-b.yaml.
+project_id: overlap-project
+
+service_accounts:
+  - account_id: shared-account
+  - account_id: team-a-only

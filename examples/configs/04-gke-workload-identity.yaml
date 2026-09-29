@@ -1,0 +1,44 @@
+# GKE Workload Identity: each Kubernetes service account (KSA) runs as its own
+# Google service account with only the permissions that workload needs.
+#
+# The cluster lives in acme-gke-prod, so its workload pool is acme-gke-prod.svc.id.goog.
+# Annotate each KSA with:  iam.gke.io/gcp-service-account: <email of the account below>
+project_id: acme-gke-prod
+
+service_accounts:
+  - account_id: gke-payments-api
+    display_name: payments-api (GKE)
+    iam_bindings:
+      - role: roles/iam.workloadIdentityUser
+        members:
+          - serviceAccount:acme-gke-prod.svc.id.goog[payments/payments-api]
+    project_roles:
+      - roles/cloudsql.client
+      - roles/pubsub.publisher
+      - role: roles/secretmanager.secretAccessor
+        condition:
+          title: payments-secrets-only
+          description: Only secrets whose name starts with payments-
+          expression: resource.name.startsWith("projects/acme-gke-prod/secrets/payments-")
+
+  - account_id: gke-orders-worker
+    display_name: orders-worker (GKE)
+    iam_bindings:
+      - role: roles/iam.workloadIdentityUser
+        members:
+          # One Google account can back several KSAs, e.g. the canary namespace too.
+          - serviceAccount:acme-gke-prod.svc.id.goog[orders/orders-worker]
+          - serviceAccount:acme-gke-prod.svc.id.goog[orders-canary/orders-worker]
+    project_roles:
+      - roles/pubsub.subscriber
+      - role: roles/bigquery.dataEditor
+        project_id: acme-data-lake
+
+  # Node pool identity: least privilege instead of the Compute Engine default account.
+  - account_id: gke-nodes
+    display_name: GKE node pools
+    description: Least-privilege node service account for acme-gke-prod clusters
+    project_roles:
+      - roles/container.defaultNodeServiceAccount
+      - role: roles/artifactregistry.reader
+        project_id: acme-artifacts

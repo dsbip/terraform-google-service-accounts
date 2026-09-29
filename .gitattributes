@@ -1,0 +1,2 @@
+# terraform fmt writes LF; keep every checkout consistent regardless of core.autocrlf.
+* text=auto eol=lf

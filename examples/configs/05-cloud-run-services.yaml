@@ -1,0 +1,54 @@
+# Cloud Run: one runtime identity per service, a CI deployer that is the only
+# principal allowed to deploy as them, and identities for Cloud Scheduler and
+# Pub/Sub push subscriptions that invoke the services.
+project_id: acme-run-prod
+
+service_accounts:
+  - account_id: run-web
+    display_name: web (Cloud Run)
+    iam_bindings:
+      # Only the CI deployer (from 03-github-actions-wif.yaml) may deploy revisions running as this account.
+      - role: roles/iam.serviceAccountUser
+        authoritative: true
+        members:
+          - serviceAccount:gha-app-deployer@acme-ci.iam.gserviceaccount.com
+    project_roles:
+      - roles/cloudtrace.agent
+      - role: roles/secretmanager.secretAccessor
+        condition:
+          title: web-secrets-only
+          expression: resource.name.startsWith("projects/acme-run-prod/secrets/web-")
+
+  - account_id: run-api
+    display_name: api (Cloud Run)
+    iam_bindings:
+      - role: roles/iam.serviceAccountUser
+        authoritative: true
+        members:
+          - serviceAccount:gha-app-deployer@acme-ci.iam.gserviceaccount.com
+    project_roles:
+      - roles/cloudtrace.agent
+      - roles/cloudsql.client
+      - roles/pubsub.publisher
+
+  # Cloud Scheduler calls the api service with an OIDC token for this account.
+  - account_id: scheduler-invoker
+    display_name: Cloud Scheduler -> api
+    iam_bindings:
+      # Whoever creates the scheduler jobs must be able to act as this account.
+      - role: roles/iam.serviceAccountUser
+        members:
+          - serviceAccount:gha-app-deployer@acme-ci.iam.gserviceaccount.com
+    project_roles:
+      - roles/run.invoker
+
+  # Attached to Pub/Sub push subscriptions that call the api service.
+  - account_id: pubsub-push-invoker
+    display_name: Pub/Sub push -> api
+    iam_bindings:
+      # The project's Pub/Sub service agent mints the OIDC tokens for push requests.
+      - role: roles/iam.serviceAccountTokenCreator
+        members:
+          - serviceAccount:service-234567890123@gcp-sa-pubsub.iam.gserviceaccount.com
+    project_roles:
+      - roles/run.invoker

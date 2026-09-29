@@ -1,0 +1,53 @@
+# One file managing an app's identities across dev, staging and prod projects.
+# account_ids must be unique within a file, so the environment is part of each ID.
+project_id: acme-shared-services # default for accounts without their own project_id
+
+service_accounts:
+  - account_id: app-dev
+    project_id: acme-app-dev
+    display_name: App runtime (dev)
+    iam_bindings:
+      # Developers may deploy to dev directly.
+      - role: roles/iam.serviceAccountUser
+        members:
+          - group:developers@acme.example.com
+    project_roles:
+      - roles/logging.logWriter
+      - role: roles/artifactregistry.reader
+        project_id: acme-artifacts
+
+  - account_id: app-staging
+    project_id: acme-app-staging
+    display_name: App runtime (staging)
+    iam_bindings:
+      - role: roles/iam.serviceAccountUser
+        members:
+          - ref:release-bot
+    project_roles:
+      - roles/logging.logWriter
+      - role: roles/artifactregistry.reader
+        project_id: acme-artifacts
+
+  - account_id: app-prod
+    project_id: acme-app-prod
+    display_name: App runtime (prod)
+    deletion_policy: PREVENT
+    iam_bindings:
+      # In prod, only the release bot may deploy as this account.
+      - role: roles/iam.serviceAccountUser
+        authoritative: true
+        members:
+          - ref:release-bot
+    project_roles:
+      - roles/logging.logWriter
+      - role: roles/artifactregistry.reader
+        project_id: acme-artifacts
+
+  # Lives in the shared-services project (the file default) and promotes releases.
+  - account_id: release-bot
+    display_name: Release bot
+    project_roles:
+      - role: roles/run.developer
+        project_id: acme-app-staging
+      - role: roles/run.developer
+        project_id: acme-app-prod

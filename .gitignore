@@ -1,0 +1,10 @@
+.terraform/
+*.tfstate
+*.tfstate.*
+crash.log
+crash.*.log
+*.tfplan
+# Reusable module: callers pin provider versions in their own lock file.
+.terraform.lock.hcl
+# Local Claude Code settings (personal permission modes).
+.claude/

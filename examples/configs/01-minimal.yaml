@@ -1,0 +1,14 @@
+# The smallest useful configs. Anything optional is left to GCP / provider defaults.
+project_id: acme-sandbox
+
+service_accounts:
+  # Just an account: no display name, no bindings.
+  - account_id: sandbox-runner
+
+  # One step up: a readable name, a description and a single project role
+  # (a bare role string means "on this account's own project").
+  - account_id: sandbox-reporter
+    display_name: Sandbox reporter
+    description: Reads monitoring data for the weekly sandbox report
+    project_roles:
+      - roles/monitoring.viewer

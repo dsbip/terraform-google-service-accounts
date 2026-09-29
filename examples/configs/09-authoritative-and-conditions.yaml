@@ -1,0 +1,56 @@
+# Advanced patterns: authoritative vs additive grants, IAM conditions and custom roles.
+project_id: acme-platform
+
+service_accounts:
+  - account_id: platform-automation
+    display_name: Platform automation
+    iam_bindings:
+      # Additive (the default): adds these members and never removes anyone
+      # who was granted the role outside Terraform.
+      - role: roles/iam.serviceAccountUser
+        members:
+          - group:platform-team@acme.example.com
+
+      # Authoritative: these become the ONLY holders of the role on this account.
+      # Anyone added by hand is removed on the next apply.
+      - role: roles/iam.serviceAccountTokenCreator
+        authoritative: true
+        members:
+          - group:platform-oncall@acme.example.com
+          - ref:platform-scheduler
+
+      # Conditions in ONE expression are combined with &&: the contractor gets
+      # access only during business hours AND only until the contract ends.
+      - role: roles/iam.serviceAccountOpenIdTokenCreator
+        members:
+          - user:contractor@partner.example.com
+        condition:
+          title: contractor-business-hours
+          description: Weekday business hours until the contract ends
+          expression: >-
+            request.time < timestamp("2027-01-01T00:00:00Z") &&
+            request.time.getDayOfWeek("Europe/London") >= 1 &&
+            request.time.getDayOfWeek("Europe/London") <= 5 &&
+            request.time.getHours("Europe/London") >= 8 &&
+            request.time.getHours("Europe/London") < 18
+
+    project_roles:
+      # Custom roles: project-level and organization-level.
+      - projects/acme-platform/roles/platformDeployer
+      - role: organizations/987654321098/roles/networkReader
+
+      # The same role twice with DIFFERENT condition titles creates two separate
+      # grants, and either one grants access (OR): here, read access to two buckets.
+      - role: roles/storage.objectViewer
+        condition:
+          title: config-bucket
+          expression: resource.name.startsWith("projects/_/buckets/acme-platform-config/")
+      - role: roles/storage.objectViewer
+        condition:
+          title: templates-bucket
+          expression: resource.name.startsWith("projects/_/buckets/acme-platform-templates/")
+
+  - account_id: platform-scheduler
+    display_name: Platform scheduler
+    project_roles:
+      - roles/cloudscheduler.jobRunner

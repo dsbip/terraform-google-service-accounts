@@ -1,0 +1,51 @@
+# CI/CD from GitHub Actions without service account keys.
+#
+# Assumes a Workload Identity pool "github" with a GitHub OIDC provider in the
+# project numbered 123456789012, mapping google.subject=assertion.sub and
+# attribute.repository=assertion.repository. Workflows exchange their OIDC
+# token for credentials of these accounts.
+project_id: acme-ci
+
+service_accounts:
+  # `terraform plan` on pull requests: read-only.
+  - account_id: gha-terraform-plan
+    display_name: GitHub Actions - terraform plan
+    description: Read-only plans for acme/infrastructure pull requests
+    iam_bindings:
+      - role: roles/iam.workloadIdentityUser
+        members:
+          # Any workflow run in the acme/infrastructure repository.
+          - principalSet://iam.googleapis.com/projects/123456789012/locations/global/workloadIdentityPools/github/attribute.repository/acme/infrastructure
+    project_roles:
+      - roles/viewer
+      - role: roles/storage.objectViewer
+        project_id: acme-tf-state # the Terraform state bucket lives here
+
+  # `terraform apply`: write access, so only runs on the main branch may use it.
+  - account_id: gha-terraform-apply
+    display_name: GitHub Actions - terraform apply
+    description: Applies acme/infrastructure from the main branch only
+    deletion_policy: PREVENT
+    iam_bindings:
+      - role: roles/iam.workloadIdentityUser
+        authoritative: true # nothing else may federate into this account
+        members:
+          - principal://iam.googleapis.com/projects/123456789012/locations/global/workloadIdentityPools/github/subject/repo:acme/infrastructure:ref:refs/heads/main
+    project_roles:
+      - roles/editor # narrow this to what your infrastructure actually needs
+      - role: roles/storage.objectAdmin
+        project_id: acme-tf-state
+
+  # Builds images and deploys the web app to Cloud Run (see 05-cloud-run-services.yaml,
+  # which grants this account roles/iam.serviceAccountUser on the runtime accounts).
+  - account_id: gha-app-deployer
+    display_name: GitHub Actions - app deployer
+    iam_bindings:
+      - role: roles/iam.workloadIdentityUser
+        members:
+          - principalSet://iam.googleapis.com/projects/123456789012/locations/global/workloadIdentityPools/github/attribute.repository/acme/web-app
+    project_roles:
+      - role: roles/artifactregistry.writer
+        project_id: acme-artifacts
+      - role: roles/run.developer
+        project_id: acme-run-prod
